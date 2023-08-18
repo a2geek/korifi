@@ -1,6 +1,8 @@
 package payloads
 
 import (
+	"fmt"
+
 	"code.cloudfoundry.org/korifi/api/payloads/validation"
 	jellidation "github.com/jellydator/validation"
 )
@@ -11,9 +13,28 @@ type Lifecycle struct {
 }
 
 func (l Lifecycle) Validate() error {
+	lifecycleDataRule := jellidation.By(func(value any) error {
+		data, ok := value.(*LifecycleData)
+		if !ok {
+			return fmt.Errorf("%T is not supported, LifecycleData is expected", value)
+		}
+
+		if l.Type == "docker" {
+			return data.ValidateDockerLifecycleData()
+		}
+
+		if l.Type == "buildpack" {
+			return data.ValidateBuildpackLifecycleData()
+		}
+
+		return nil
+	})
+
 	return jellidation.ValidateStruct(&l,
-		jellidation.Field(&l.Type, jellidation.Required),
-		jellidation.Field(&l.Data, jellidation.NotNil),
+		jellidation.Field(&l.Type,
+			jellidation.Required,
+			validation.OneOf("buildpack", "docker")),
+		jellidation.Field(&l.Data, jellidation.Required, lifecycleDataRule),
 	)
 }
 
@@ -22,10 +43,14 @@ type LifecycleData struct {
 	Stack      string   `json:"stack"`
 }
 
-func (d LifecycleData) Validate() error {
+func (d LifecycleData) ValidateBuildpackLifecycleData() error {
 	return jellidation.ValidateStruct(&d,
 		jellidation.Field(&d.Stack, jellidation.Required),
 	)
+}
+
+func (d LifecycleData) ValidateDockerLifecycleData() error {
+	return jellidation.Validate(&d, jellidation.In(LifecycleData{}).Error("must be an empty object"))
 }
 
 type LifecyclePatch struct {
